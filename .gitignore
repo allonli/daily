@@ -1,0 +1,9 @@
+.DS_Store
+.trae
+.vercel
+dist
+node_modules
+extension
+app-main-*.js
+appearance-settings-*.js
+font-settings-*.js
