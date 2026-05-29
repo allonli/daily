@@ -145,6 +145,7 @@ function renderFeed() {
   }
 
   feedEl.innerHTML = feed.map(renderArticle).join('')
+  bindImageFallbacks(feedEl)
 
   feedEl.querySelectorAll('[data-hide-publisher]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -180,7 +181,7 @@ function bindCustomizeControls() {
 function renderArticle(item, index) {
   const isLead = index === 0
   const image = item.imageUrl
-    ? `<img src="${proxyImageUrl(item.imageUrl)}" alt="" loading="${isLead ? 'eager' : 'lazy'}" referrerpolicy="no-referrer" onerror="this.closest('.image-wrap').classList.add('has-error')" />`
+    ? `<img src="${escapeHtml(proxyImageUrl(item.imageUrl))}" data-original-src="${escapeHtml(item.imageUrl)}" alt="" loading="${isLead ? 'eager' : 'lazy'}" referrerpolicy="no-referrer" />`
     : '<div class="image-fallback"></div>'
 
   return `
@@ -198,6 +199,24 @@ function renderArticle(item, index) {
       </div>
     </article>
   `
+}
+
+function bindImageFallbacks(root) {
+  root.querySelectorAll('img[data-original-src]').forEach((image) => {
+    image.addEventListener('error', () => {
+      const wrapper = image.closest('.image-wrap')
+      const originalSrc = image.dataset.originalSrc
+
+      if (!image.dataset.proxyRetried && originalSrc && !isProxiedImageUrl(image.src)) {
+        image.dataset.proxyRetried = 'true'
+        wrapper?.classList.remove('has-error')
+        image.src = forceProxyImageUrl(originalSrc)
+        return
+      }
+
+      wrapper?.classList.add('has-error')
+    })
+  })
 }
 
 function setLoading(isLoading) {
@@ -557,6 +576,31 @@ function proxyImageUrl(url) {
 
   // Brave CDN 的 .pad 图片前面带填充字节，需要本站代理清洗；普通媒体图片保留原始 URL。
   return new URL(`/api/image?url=${encodeURIComponent(url)}`, location.origin).toString()
+}
+
+function forceProxyImageUrl(url) {
+  if (!url) {
+    return ''
+  }
+
+  if (url.startsWith('/api/image?')) {
+    return new URL(url, location.origin).toString()
+  }
+
+  if (isProxiedImageUrl(url)) {
+    return url
+  }
+
+  return new URL(`/api/image?url=${encodeURIComponent(url)}`, location.origin).toString()
+}
+
+function isProxiedImageUrl(url) {
+  try {
+    const imageUrl = new URL(url, location.origin)
+    return imageUrl.origin === location.origin && imageUrl.pathname === '/api/image'
+  } catch {
+    return false
+  }
 }
 
 function needsImageProxy(url) {
