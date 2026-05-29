@@ -545,13 +545,18 @@ function proxyImageUrl(url) {
     return ''
   }
 
+  if (url.startsWith('/api/image?')) {
+    return new URL(url, location.origin).toString()
+  }
+
   const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname)
 
   if (isLocal) {
     return url
   }
 
-  return `/api/image?url=${encodeURIComponent(url)}`
+  // 生产环境使用绝对代理地址，避免扩展或嵌入上下文把相对路径解析到错误域名。
+  return new URL(`/api/image?url=${encodeURIComponent(url)}`, location.origin).toString()
 }
 
 function translateChannel(channel) {
