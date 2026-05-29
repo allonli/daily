@@ -546,17 +546,26 @@ function proxyImageUrl(url) {
   }
 
   if (url.startsWith('/api/image?')) {
-    return new URL(url, location.origin).toString()
+    return new URL(url, location.origin).searchParams.get('url') || ''
   }
 
   const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname)
 
-  if (isLocal) {
+  if (isLocal || !needsImageProxy(url)) {
     return url
   }
 
-  // 生产环境使用绝对代理地址，避免扩展或嵌入上下文把相对路径解析到错误域名。
+  // Brave CDN 的 .pad 图片前面带填充字节，需要本站代理清洗；普通媒体图片保留原始 URL。
   return new URL(`/api/image?url=${encodeURIComponent(url)}`, location.origin).toString()
+}
+
+function needsImageProxy(url) {
+  try {
+    const imageUrl = new URL(url)
+    return imageUrl.hostname === 'pcdn.brave.com' && imageUrl.pathname.endsWith('.pad')
+  } catch {
+    return false
+  }
 }
 
 function translateChannel(channel) {
