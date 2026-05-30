@@ -1,5 +1,5 @@
-import { DEFAULT_CHANNEL } from './app-config.js'
-import { CHANNELS, fetchNewsBundle, filterNews, formatRelativeTime } from './news.js'
+import { DEFAULT_CHANNEL, PRESET_CHANNELS, SIDEBAR_CHANNELS } from './app-config.js'
+import { fetchNewsBundle, filterNews, formatRelativeTime } from './news.js'
 import { buildZaobaoSectionItems, fetchZaobaoNews } from './zaobao.js'
 import './styles.css'
 
@@ -26,9 +26,9 @@ function renderShell() {
     <section class="page-shell">
       <section class="news-board">
         <aside class="news-sidebar">
-          <button class="sidebar-tab is-active" data-preset="Zaobao" type="button">联合早报</button>
-          <button class="sidebar-tab" data-preset="Recommended" type="button">为您推荐</button>
-          <button class="sidebar-tab" data-preset="Following" type="button">正在关注</button>
+          ${PRESET_CHANNELS.map((channel) => `
+            <button class="sidebar-tab ${channel.id === state.activeChannel ? 'is-active' : ''}" data-preset="${channel.id}" type="button">${channel.label}</button>
+          `).join('')}
 
           <div class="sidebar-section">
             <div class="section-heading">
@@ -126,7 +126,7 @@ async function loadNews(forceRefresh = false) {
 }
 
 function renderChannels() {
-  app.querySelector('[data-channels]').innerHTML = CHANNELS
+  app.querySelector('[data-channels]').innerHTML = SIDEBAR_CHANNELS
     .map((channel) => `
       <button class="sidebar-item ${channel === state.activeChannel ? 'is-active' : ''}" data-channel="${channel}" type="button">
         <span>${translateChannel(channel)}</span>
@@ -447,7 +447,7 @@ function renderCustomize() {
 function renderCustomizeChannels() {
   const followedCount = state.sources.filter(isSourceFollowed).length
   app.querySelector('[data-follow-count]').textContent = `${followedCount} 个来源`
-  app.querySelector('[data-customize-channels]').innerHTML = CHANNELS
+  app.querySelector('[data-customize-channels]').innerHTML = SIDEBAR_CHANNELS
     .map((channel) => `
       <button class="customize-channel ${state.customizeView === channel ? 'is-active' : ''}" data-customize-channel="${channel}" type="button">
         <span class="channel-icon">${channelIcon(channel)}</span>
@@ -481,7 +481,7 @@ function renderFollowedSources() {
 
 function renderSourceGrid() {
   const visibleSources = getCustomizeSources().slice(0, 36)
-  const isChannelView = CHANNELS.includes(state.customizeView)
+  const isChannelView = SIDEBAR_CHANNELS.includes(state.customizeView)
   app.querySelector('[data-customize-heading]').textContent = isChannelView ? translateChannel(state.customizeView) : '热门'
   app.querySelector('[data-source-grid]').innerHTML = visibleSources
     .map((source) => `
@@ -499,7 +499,7 @@ function renderSourceGrid() {
 }
 
 function getCustomizeSources() {
-  if (CHANNELS.includes(state.customizeView)) {
+  if (SIDEBAR_CHANNELS.includes(state.customizeView)) {
     return state.sources
       .filter((source) => source.category === state.customizeView || source.channels.includes(state.customizeView))
       .sort((a, b) => a.rank - b.rank || b.score - a.score)
