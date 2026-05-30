@@ -208,6 +208,36 @@ a {
   gap: 18px;
 }
 
+.feed-section {
+  display: grid;
+  gap: 14px;
+}
+
+.feed-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  border-bottom: 1px solid #4a4a50;
+  color: #f4f4f6;
+}
+
+.feed-section-heading h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.feed-section-heading span {
+  color: #a9a9b1;
+  font-size: 12px;
+}
+
+.feed-section-list {
+  display: grid;
+  gap: 18px;
+}
+
 .news-card,
 .loading-card,
 .error-card,
