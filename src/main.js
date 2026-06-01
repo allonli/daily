@@ -1,6 +1,7 @@
 import { DEFAULT_CHANNEL, PRESET_CHANNELS, SIDEBAR_CHANNELS } from './app-config.js'
+import { renderZaobaoLoadingSection } from './loading.js'
 import { fetchNewsBundle, filterNews, formatRelativeTime } from './news.js'
-import { buildZaobaoSectionItems, fetchZaobaoNews } from './zaobao.js'
+import { buildZaobaoSectionItems, fetchZaobaoNews, getCachedZaobaoNews } from './zaobao.js'
 import './styles.css'
 
 const state = {
@@ -19,6 +20,7 @@ const state = {
 const app = document.querySelector('#app')
 
 renderShell()
+renderCachedZaobao()
 loadNews()
 
 function renderShell() {
@@ -98,31 +100,40 @@ function renderShell() {
 
 async function loadNews(forceRefresh = false) {
   setLoading(true)
+  const zaobaoPromise = fetchZaobaoNews()
+    .then((zaobaoNews) => {
+      if (buildZaobaoSectionItems(zaobaoNews).length) {
+        state.zaobaoNews = zaobaoNews
+        renderFeed()
+      }
+    })
+    .catch(() => {})
 
   try {
     const seed = forceRefresh ? Date.now() : state.feedRefreshSeed
     const cacheBust = forceRefresh ? Date.now() : ''
-    const [bundle, zaobaoNews] = await Promise.all([
-      fetchNewsBundle({ cacheBust }),
-      fetchZaobaoNews({ cacheBust }).catch(() => ({ lead: null, latest: [] }))
-    ])
+    const bundle = await fetchNewsBundle({ cacheBust })
     state.feedRefreshSeed = seed
     state.sources = bundle.sources
     state.allNews = applyFollowState(bundle.news)
-    if (buildZaobaoSectionItems(zaobaoNews).length) {
-      state.zaobaoNews = zaobaoNews
-    }
     renderPublishers()
     renderCustomize()
     renderFeed()
   } catch (error) {
-    app.querySelector('[data-feed]').innerHTML = `
-      <article class="error-card">
-        <strong>新闻加载失败</strong>
-        <span>${error.message}</span>
-      </article>
-    `
+    renderLoadError(error)
   }
+
+  await zaobaoPromise
+}
+
+function renderCachedZaobao() {
+  const cached = getCachedZaobaoNews()
+  if (!buildZaobaoSectionItems(cached).length) {
+    return
+  }
+
+  state.zaobaoNews = cached
+  renderFeed()
 }
 
 function renderChannels() {
@@ -258,9 +269,28 @@ function bindImageFallbacks(root) {
 }
 
 function setLoading(isLoading) {
-  if (isLoading) {
-    app.querySelector('[data-feed]').innerHTML = '<article class="loading-card">正在加载新闻...</article>'
+  const hasVisibleZaobao = state.activeChannel === 'Zaobao'
+    && buildZaobaoSectionItems(state.zaobaoNews).length
+  if (isLoading && !hasVisibleZaobao) {
+    app.querySelector('[data-feed]').innerHTML = state.activeChannel === 'Zaobao'
+      ? renderZaobaoLoadingSection()
+      : '<article class="loading-card">正在加载新闻...</article>'
   }
+}
+
+function renderLoadError(error) {
+  const hasVisibleZaobao = state.activeChannel === 'Zaobao'
+    && buildZaobaoSectionItems(state.zaobaoNews).length
+  if (hasVisibleZaobao) {
+    return
+  }
+
+  app.querySelector('[data-feed]').innerHTML = `
+    <article class="error-card">
+      <strong>新闻加载失败</strong>
+      <span>${error.message}</span>
+    </article>
+  `
 }
 
 function bindPresetButtons() {

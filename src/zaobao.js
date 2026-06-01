@@ -8,11 +8,13 @@ export const ZAOBAO_CACHE_KEY = 'zaobaoNewsCacheV1'
 export async function fetchZaobaoNews(options = {}) {
   const fetchImpl = options.fetchImpl || fetch
   const storage = options.storage || globalThis.localStorage
-  const cacheKey = options.cacheBust ? `?t=${encodeURIComponent(options.cacheBust)}` : ''
-  const requestOptions = options.cacheBust ? { cache: 'no-store' } : {}
+  const requestUrl = options.refresh
+    ? `/api/zaobao?refresh=1&t=${encodeURIComponent(options.cacheBust || Date.now())}`
+    : '/api/zaobao'
+  const requestOptions = options.refresh ? { cache: 'no-store' } : {}
 
   try {
-    const response = await fetchImpl(`/api/zaobao${cacheKey}`, requestOptions)
+    const response = await fetchImpl(requestUrl, requestOptions)
     if (!response.ok) {
       throw new Error(`联合早报请求失败：${response.status}`)
     }
@@ -28,6 +30,10 @@ export async function fetchZaobaoNews(options = {}) {
 
     throw error
   }
+}
+
+export function getCachedZaobaoNews(storage = globalThis.localStorage) {
+  return readZaobaoCache(storage)
 }
 
 export async function collectZaobaoNews(options = {}) {
@@ -144,6 +150,10 @@ export function extractArticleImage(html) {
 }
 
 export function buildZaobaoSectionItems(bundle = {}) {
+  if (!bundle) {
+    return []
+  }
+
   const seen = new Set()
   const items = []
 

@@ -6,6 +6,7 @@ import {
   completeZaobaoImages,
   extractArticleImage,
   fetchZaobaoNews,
+  getCachedZaobaoNews,
   parseZaobaoHome,
   parseZaobaoRealtimePage
 } from '../src/zaobao.js'
@@ -153,6 +154,10 @@ test('buildZaobaoSectionItems 用头图加最多15条最新新闻', () => {
   assert.equal(result[15].title, '新闻 14')
 })
 
+test('buildZaobaoSectionItems 忽略空缓存', () => {
+  assert.deepEqual(buildZaobaoSectionItems(null), [])
+})
+
 test('fetchZaobaoNews 请求失败时返回浏览器缓存', async () => {
   const cached = { lead: { title: '缓存头图', url: 'https://www.zaobao.com/cached' }, latest: [] }
   const storage = new Map([['zaobaoNewsCacheV1', JSON.stringify({ savedAt: Date.now(), data: cached })]])
@@ -166,6 +171,52 @@ test('fetchZaobaoNews 请求失败时返回浏览器缓存', async () => {
   })
 
   assert.equal(result.lead.title, '缓存头图')
+})
+
+test('fetchZaobaoNews 默认请求稳定缓存键', async () => {
+  const requests = []
+  await fetchZaobaoNews({
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options })
+      return {
+        ok: true,
+        json: async () => ({ lead: { title: '最新头图', url: 'https://www.zaobao.com/latest' }, latest: [] })
+      }
+    },
+    storage: null
+  })
+
+  assert.deepEqual(requests, [{ url: '/api/zaobao', options: {} }])
+})
+
+test('fetchZaobaoNews 强刷时才请求 refresh 缓存键', async () => {
+  const requests = []
+  await fetchZaobaoNews({
+    refresh: true,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options })
+      return {
+        ok: true,
+        json: async () => ({ lead: { title: '强刷头图', url: 'https://www.zaobao.com/refresh' }, latest: [] })
+      }
+    },
+    storage: null
+  })
+
+  assert.equal(requests.length, 1)
+  assert.match(requests[0].url, /^\/api\/zaobao\?refresh=1&t=\d+$/)
+  assert.deepEqual(requests[0].options, { cache: 'no-store' })
+})
+
+test('getCachedZaobaoNews 可在网络请求前读取本地旧缓存', () => {
+  const cached = { lead: { title: '本地头图', url: 'https://www.zaobao.com/local' }, latest: [] }
+  const storage = new Map([['zaobaoNewsCacheV1', JSON.stringify({ savedAt: Date.now(), data: cached })]])
+
+  const result = getCachedZaobaoNews({
+    getItem: (key) => storage.get(key) || null
+  })
+
+  assert.equal(result.lead.title, '本地头图')
 })
 
 test('collectZaobaoNews 上游失败时返回传入的上一版数据', async () => {
