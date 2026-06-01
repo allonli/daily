@@ -208,6 +208,36 @@ a {
   gap: 18px;
 }
 
+.feed-section {
+  display: grid;
+  gap: 14px;
+}
+
+.feed-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  border-bottom: 1px solid #4a4a50;
+  color: #f4f4f6;
+}
+
+.feed-section-heading h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.feed-section-heading span {
+  color: #a9a9b1;
+  font-size: 12px;
+}
+
+.feed-section-list {
+  display: grid;
+  gap: 18px;
+}
+
 .news-card,
 .loading-card,
 .error-card,
@@ -266,6 +296,120 @@ a {
 
 .image-fallback {
   background: linear-gradient(135deg, #404046, #2a2a2f);
+}
+
+.zaobao-loading {
+  min-height: 520px;
+}
+
+.loading-status {
+  display: inline-flex;
+  min-width: 126px;
+  justify-content: flex-end;
+}
+
+.loading-dot {
+  animation: loading-dot 1.2s ease-in-out infinite;
+  opacity: 0.25;
+}
+
+.loading-dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.loading-dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+.loading-skeleton-list {
+  gap: 18px;
+}
+
+.loading-skeleton-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 152px;
+  gap: 22px;
+  min-height: 154px;
+  padding: 18px 20px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #2d2d30;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+.loading-skeleton-lead {
+  display: block;
+  padding: 16px;
+}
+
+.skeleton-media,
+.skeleton-thumb,
+.skeleton-line {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #3b3b40;
+}
+
+.skeleton-media::after,
+.skeleton-thumb::after,
+.skeleton-line::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.45s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+}
+
+.skeleton-media {
+  width: 100%;
+  height: 398px;
+  margin-bottom: 20px;
+}
+
+.skeleton-copy {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.skeleton-thumb {
+  align-self: center;
+  width: 152px;
+  height: 96px;
+}
+
+.skeleton-line {
+  height: 12px;
+}
+
+.skeleton-meta {
+  width: min(42%, 220px);
+}
+
+.skeleton-title {
+  width: min(78%, 520px);
+  height: 18px;
+}
+
+@keyframes loading-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+
+  40% {
+    opacity: 1;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 .image-wrap.has-error img {

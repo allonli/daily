@@ -1,10 +1,14 @@
-import { CHANNELS, fetchNewsBundle, filterNews, formatRelativeTime } from './news.js'
+import { DEFAULT_CHANNEL, PRESET_CHANNELS, SIDEBAR_CHANNELS } from './app-config.js'
+import { renderZaobaoLoadingSection } from './loading.js'
+import { fetchNewsBundle, filterNews, formatRelativeTime } from './news.js'
+import { buildZaobaoSectionItems, fetchZaobaoNews, getCachedZaobaoNews } from './zaobao.js'
 import './styles.css'
 
 const state = {
   allNews: [],
+  zaobaoNews: { lead: null, latest: [] },
   sources: [],
-  activeChannel: 'Recommended',
+  activeChannel: DEFAULT_CHANNEL,
   activePublisher: '',
   feedRefreshSeed: 0,
   hiddenPublishers: JSON.parse(localStorage.getItem('hiddenPublishers') || '[]'),
@@ -16,6 +20,7 @@ const state = {
 const app = document.querySelector('#app')
 
 renderShell()
+renderCachedZaobao()
 loadNews()
 
 function renderShell() {
@@ -23,8 +28,9 @@ function renderShell() {
     <section class="page-shell">
       <section class="news-board">
         <aside class="news-sidebar">
-          <button class="sidebar-tab is-active" data-preset="Recommended" type="button">为您推荐</button>
-          <button class="sidebar-tab" data-preset="Following" type="button">正在关注</button>
+          ${PRESET_CHANNELS.map((channel) => `
+            <button class="sidebar-tab ${channel.id === state.activeChannel ? 'is-active' : ''}" data-preset="${channel.id}" type="button">${channel.label}</button>
+          `).join('')}
 
           <div class="sidebar-section">
             <div class="section-heading">
@@ -94,10 +100,19 @@ function renderShell() {
 
 async function loadNews(forceRefresh = false) {
   setLoading(true)
+  const zaobaoPromise = fetchZaobaoNews()
+    .then((zaobaoNews) => {
+      if (buildZaobaoSectionItems(zaobaoNews).length) {
+        state.zaobaoNews = zaobaoNews
+        renderFeed()
+      }
+    })
+    .catch(() => {})
 
   try {
     const seed = forceRefresh ? Date.now() : state.feedRefreshSeed
-    const bundle = await fetchNewsBundle({ cacheBust: forceRefresh ? Date.now() : '' })
+    const cacheBust = forceRefresh ? Date.now() : ''
+    const bundle = await fetchNewsBundle({ cacheBust })
     state.feedRefreshSeed = seed
     state.sources = bundle.sources
     state.allNews = applyFollowState(bundle.news)
@@ -105,17 +120,24 @@ async function loadNews(forceRefresh = false) {
     renderCustomize()
     renderFeed()
   } catch (error) {
-    app.querySelector('[data-feed]').innerHTML = `
-      <article class="error-card">
-        <strong>新闻加载失败</strong>
-        <span>${error.message}</span>
-      </article>
-    `
+    renderLoadError(error)
   }
+
+  await zaobaoPromise
+}
+
+function renderCachedZaobao() {
+  const cached = getCachedZaobaoNews()
+  if (!buildZaobaoSectionItems(cached).length) {
+    return
+  }
+
+  state.zaobaoNews = cached
+  renderFeed()
 }
 
 function renderChannels() {
-  app.querySelector('[data-channels]').innerHTML = CHANNELS
+  app.querySelector('[data-channels]').innerHTML = SIDEBAR_CHANNELS
     .map((channel) => `
       <button class="sidebar-item ${channel === state.activeChannel ? 'is-active' : ''}" data-channel="${channel}" type="button">
         <span>${translateChannel(channel)}</span>
@@ -138,13 +160,14 @@ function renderChannels() {
 function renderFeed() {
   const feed = getVisibleFeed().slice(0, 36)
   const feedEl = app.querySelector('[data-feed]')
+  const zaobaoSection = renderZaobaoSection()
 
-  if (!feed.length) {
+  if (!feed.length && !zaobaoSection) {
     feedEl.innerHTML = '<article class="empty-card">当前分类没有新闻</article>'
     return
   }
 
-  feedEl.innerHTML = feed.map(renderArticle).join('')
+  feedEl.innerHTML = `${zaobaoSection}${feed.map(renderArticle).join('')}`
   bindImageFallbacks(feedEl)
 
   feedEl.querySelectorAll('[data-hide-publisher]').forEach((button) => {
@@ -156,6 +179,31 @@ function renderFeed() {
       renderFeed()
     })
   })
+}
+
+function renderZaobaoSection() {
+  if (state.activeChannel !== 'Zaobao' || state.activePublisher) {
+    return ''
+  }
+
+  const items = buildZaobaoSectionItems(state.zaobaoNews)
+    .filter((item) => !state.hiddenPublishers.includes(item.publisherName))
+
+  if (!items.length) {
+    return ''
+  }
+
+  return `
+    <section class="feed-section zaobao-section">
+      <div class="feed-section-heading">
+        <h2>联合早报</h2>
+        <span>最新</span>
+      </div>
+      <div class="feed-section-list">
+        ${items.map(renderArticle).join('')}
+      </div>
+    </section>
+  `
 }
 
 function bindCustomizeControls() {
@@ -180,6 +228,7 @@ function bindCustomizeControls() {
 
 function renderArticle(item, index) {
   const isLead = index === 0
+  const publishedLabel = item.timeLabel || (item.publishedAt ? formatRelativeTime(item.publishedAt) : '')
   const image = item.imageUrl
     ? `<img src="${escapeHtml(proxyImageUrl(item.imageUrl))}" data-original-src="${escapeHtml(item.imageUrl)}" alt="" loading="${isLead ? 'eager' : 'lazy'}" referrerpolicy="no-referrer" />`
     : '<div class="image-fallback"></div>'
@@ -191,7 +240,7 @@ function renderArticle(item, index) {
         <div class="meta-row">
           <span>${item.publisherName}</span>
           <span>${translateChannel(item.category)}</span>
-          <span>${formatRelativeTime(item.publishedAt)}</span>
+          ${publishedLabel ? `<span>${publishedLabel}</span>` : ''}
           ${item.isNew ? '<b>NEW</b>' : ''}
         </div>
         <h3><a href="${item.url}" target="_blank" rel="noreferrer">${item.title}</a></h3>
@@ -220,9 +269,28 @@ function bindImageFallbacks(root) {
 }
 
 function setLoading(isLoading) {
-  if (isLoading) {
-    app.querySelector('[data-feed]').innerHTML = '<article class="loading-card">正在加载新闻...</article>'
+  const hasVisibleZaobao = state.activeChannel === 'Zaobao'
+    && buildZaobaoSectionItems(state.zaobaoNews).length
+  if (isLoading && !hasVisibleZaobao) {
+    app.querySelector('[data-feed]').innerHTML = state.activeChannel === 'Zaobao'
+      ? renderZaobaoLoadingSection()
+      : '<article class="loading-card">正在加载新闻...</article>'
   }
+}
+
+function renderLoadError(error) {
+  const hasVisibleZaobao = state.activeChannel === 'Zaobao'
+    && buildZaobaoSectionItems(state.zaobaoNews).length
+  if (hasVisibleZaobao) {
+    return
+  }
+
+  app.querySelector('[data-feed]').innerHTML = `
+    <article class="error-card">
+      <strong>新闻加载失败</strong>
+      <span>${error.message}</span>
+    </article>
+  `
 }
 
 function bindPresetButtons() {
@@ -409,7 +477,7 @@ function renderCustomize() {
 function renderCustomizeChannels() {
   const followedCount = state.sources.filter(isSourceFollowed).length
   app.querySelector('[data-follow-count]').textContent = `${followedCount} 个来源`
-  app.querySelector('[data-customize-channels]').innerHTML = CHANNELS
+  app.querySelector('[data-customize-channels]').innerHTML = SIDEBAR_CHANNELS
     .map((channel) => `
       <button class="customize-channel ${state.customizeView === channel ? 'is-active' : ''}" data-customize-channel="${channel}" type="button">
         <span class="channel-icon">${channelIcon(channel)}</span>
@@ -443,7 +511,7 @@ function renderFollowedSources() {
 
 function renderSourceGrid() {
   const visibleSources = getCustomizeSources().slice(0, 36)
-  const isChannelView = CHANNELS.includes(state.customizeView)
+  const isChannelView = SIDEBAR_CHANNELS.includes(state.customizeView)
   app.querySelector('[data-customize-heading]').textContent = isChannelView ? translateChannel(state.customizeView) : '热门'
   app.querySelector('[data-source-grid]').innerHTML = visibleSources
     .map((source) => `
@@ -461,7 +529,7 @@ function renderSourceGrid() {
 }
 
 function getCustomizeSources() {
-  if (CHANNELS.includes(state.customizeView)) {
+  if (SIDEBAR_CHANNELS.includes(state.customizeView)) {
     return state.sources
       .filter((source) => source.category === state.customizeView || source.channels.includes(state.customizeView))
       .sort((a, b) => a.rank - b.rank || b.score - a.score)
@@ -617,6 +685,8 @@ function translateChannel(channel) {
     All: '全部新闻',
     Recommended: '为您推荐',
     Following: '正在关注',
+    Zaobao: '联合早报',
+    '头图': '头图',
     Brave: 'Brave 官方',
     'Top News': '头条新闻',
     'Top Sources': '最大来源',
