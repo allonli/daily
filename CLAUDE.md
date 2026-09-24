@@ -25,6 +25,7 @@ npm run preview
 - `src/news.js` 负责拉取 Brave News CDN、合并新闻源信息、筛选 `en_US` 来源和新闻筛选。
 - `src/zaobao.js` 负责抓取联合早报 `/cn` 首页、解析 Astro 初始数据、解析 `/realtime` 静态列表、补齐详情页主图、处理浏览器缓存兜底，并供前端、Vercel API 和本地开发代理复用。
 - `src/main.js` 负责渲染页面、侧栏折叠、自定义来源弹层、来源接口发布者分组、刷新重排、发布者标签和交互状态。
+- 左侧频道、预设入口和发布者的点击处理在 `renderFeed()` 后立即将页面滚动到顶部；不要把滚动重置放进通用渲染函数，否则后台更新、隐藏来源和关注变更会打断阅读。
 - `src/styles.css` 负责复刻 Brave 新标签页暗色双栏视觉。
 - `api/image.js` 是 Vercel Serverless Function，用于代理图片、裁掉 `.pad` 图片前置填充字节、识别真实图片类型并设置缓存头。
 - `api/zaobao.js` 是 Vercel Serverless Function，用于返回联合早报头图和右侧“最新”新闻。

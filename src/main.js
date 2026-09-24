@@ -142,6 +142,8 @@ function renderChannels() {
       renderPublishers()
       renderPresetButtons()
       renderFeed()
+      // 只在用户切换入口后回到页首，后台刷新仍保留阅读位置。
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
     })
   })
 }
@@ -272,6 +274,7 @@ function bindPresetButtons() {
       renderChannels()
       renderPublishers()
       renderFeed()
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
     })
   })
 }
@@ -356,6 +359,7 @@ function renderPublishers() {
       renderChannels()
       renderPublishers()
       renderFeed()
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
     })
   })
 }
