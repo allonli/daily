@@ -1,0 +1,21 @@
+name: Refresh static news
+
+on:
+  schedule:
+    - cron: '2-57/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-static-news
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Trigger background static page regeneration
+        run: curl --fail --show-error --silent --retry 2 --max-time 60 https://allonli.vercel.app/ --output /dev/null

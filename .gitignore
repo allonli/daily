@@ -3,6 +3,7 @@
 .vercel
 dist
 node_modules
+.cache
 extension
 app-main-*.js
 appearance-settings-*.js
