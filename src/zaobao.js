@@ -144,6 +144,9 @@ export function extractArticleImage(html) {
 }
 
 export function buildZaobaoSectionItems(bundle = {}) {
+  if (!bundle) {
+    return []
+  }
   const seen = new Set()
   const items = []
 

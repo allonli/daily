@@ -1,31 +1,27 @@
+import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import { defineConfig } from 'vite'
-import { collectZaobaoNews } from './src/zaobao.js'
+import { collectSnapshot, isValidSnapshot, renderSnapshotDocument } from './src/snapshot.js'
 
-let cachedZaobaoPayload = null
+let devSnapshot
 
 export default defineConfig({
-  server: {
-    host: '127.0.0.1'
-  },
-  preview: {
-    host: '127.0.0.1'
-  },
-  plugins: [
-    {
-      name: 'local-zaobao-api',
-      configureServer(server) {
-        server.middlewares.use('/api/zaobao', async (_req, res) => {
-          try {
-            const payload = await collectZaobaoNews({ fallback: cachedZaobaoPayload })
-            cachedZaobaoPayload = payload
-            res.setHeader('content-type', 'application/json; charset=utf-8')
-            res.end(JSON.stringify(payload))
-          } catch (error) {
-            res.statusCode = 502
-            res.end(error.message || 'Zaobao fetch failed')
-          }
-        })
+  server: { host: '127.0.0.1' },
+  preview: { host: '127.0.0.1' },
+  plugins: [{
+    name: 'static-news-development',
+    apply: 'serve',
+    async configureServer() {
+      try {
+        devSnapshot = JSON.parse(await readFile('.cache/news.json', 'utf8'))
+        if (!isValidSnapshot(devSnapshot)) throw new Error('快照不完整')
+      } catch {
+        devSnapshot = await collectSnapshot()
+        await mkdir('.cache', { recursive: true })
+        await writeFile('.cache/news.json', JSON.stringify(devSnapshot))
       }
+    },
+    transformIndexHtml(html) {
+      return renderSnapshotDocument(html, devSnapshot, { production: false })
     }
-  ]
+  }]
 })

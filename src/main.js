@@ -1,12 +1,21 @@
-import { DEFAULT_CHANNEL, PRESET_CHANNELS, SIDEBAR_CHANNELS } from './app-config.js'
-import { fetchNewsBundle, filterNews, formatRelativeTime } from './news.js'
-import { buildZaobaoSectionItems, fetchZaobaoNews } from './zaobao.js'
+import { DEFAULT_CHANNEL, SIDEBAR_CHANNELS } from './app-config.js'
+import { filterNews } from './news.js'
+import { PUBLISHER_GROUPS } from './snapshot-news.js'
+import { renderArticle as renderStaticArticle, renderZaobaoSection as renderStaticZaobao, renderShellMarkup, formatSnapshotStatus } from './render.js'
+import { isValidSnapshot, parseSnapshotDocument } from './snapshot.js'
 import './styles.css'
 
+const initialSnapshot = JSON.parse(document.querySelector('#news-snapshot')?.textContent || 'null')
+const initialImage = document.querySelector('.lead-card img')?.getAttribute('src')
+if (initialSnapshot?.zaobao.lead && initialImage?.startsWith('data:image/')) {
+  initialSnapshot.zaobao.lead.inlineImage = initialImage
+}
+
 const state = {
-  allNews: [],
-  zaobaoNews: { lead: null, latest: [] },
-  sources: [],
+  allNews: initialSnapshot?.news || [],
+  zaobaoNews: initialSnapshot?.zaobao || { lead: null, latest: [] },
+  sources: initialSnapshot?.sources || [],
+  generatedAt: initialSnapshot?.generatedAt || 0,
   activeChannel: DEFAULT_CHANNEL,
   activePublisher: '',
   feedRefreshSeed: 0,
@@ -18,74 +27,11 @@ const state = {
 
 const app = document.querySelector('#app')
 
-renderShell()
-loadNews()
-
 function renderShell() {
-  app.innerHTML = `
-    <section class="page-shell">
-      <section class="news-board">
-        <aside class="news-sidebar">
-          ${PRESET_CHANNELS.map((channel) => `
-            <button class="sidebar-tab ${channel.id === state.activeChannel ? 'is-active' : ''}" data-preset="${channel.id}" type="button">${channel.label}</button>
-          `).join('')}
-
-          <div class="sidebar-section">
-            <div class="section-heading">
-              <button class="collapse-button" data-toggle-section="channels" type="button" aria-label="收起频道">⌄</button>
-              <strong data-toggle-section="channels">频道</strong>
-              <button data-open-customize="channels" type="button" title="添加频道">＋</button>
-            </div>
-            <nav class="sidebar-list" data-section="channels" data-channels></nav>
-          </div>
-
-          <div class="publisher-groups" data-publisher-groups></div>
-        </aside>
-
-        <section class="feed-panel" aria-live="polite">
-          <div class="feed-list" data-feed>
-            <article class="loading-card">正在加载新闻...</article>
-          </div>
-        </section>
-      </section>
-
-      <div class="floating-actions">
-        <button data-open-customize="publishers" type="button" title="自定义">☷</button>
-        <button data-refresh type="button" title="刷新">↻</button>
-      </div>
-
-      <section class="customize-overlay" data-customize hidden>
-        <div class="customize-panel" role="dialog" aria-modal="true" aria-label="自定义 Brave 新闻">
-          <header class="customize-header">
-            <button data-close-customize type="button" class="back-button">‹ 返回仪表板</button>
-            <div class="customize-title">
-              <span>Brave 新闻</span>
-              <button class="news-toggle" type="button" aria-pressed="true"><span></span></button>
-              <span>打开文章</span>
-              <button class="article-target" type="button">打开新的标签页⌄</button>
-            </div>
-            <button data-close-customize type="button" class="close-button" aria-label="关闭">×</button>
-          </header>
-
-          <div class="customize-body">
-            <aside class="customize-side">
-              <div class="follow-summary">
-                <strong>正在关注</strong>
-                <span data-follow-count>0 个来源</span>
-              </div>
-              <nav class="customize-channel-list" data-customize-channels></nav>
-              <nav class="customize-source-list" data-followed-sources></nav>
-            </aside>
-
-            <section class="customize-content">
-              <h2 data-customize-heading>热门</h2>
-              <div class="source-grid" data-source-grid></div>
-            </section>
-          </div>
-        </div>
-      </section>
-    </section>
-  `
+  // 服务端已输出完整正文；仅在开发模板缺少页面时补上外壳。
+  if (!app.querySelector('[data-feed]')) {
+    app.innerHTML = renderShellMarkup({ generatedAt: state.generatedAt })
+  }
 
   renderChannels()
   renderPublishers()
@@ -93,35 +39,35 @@ function renderShell() {
   bindPresetButtons()
   bindCustomizeControls()
   bindSectionToggles()
-  app.querySelector('[data-refresh]').addEventListener('click', () => loadNews(true))
+  app.querySelector('[data-refresh]').addEventListener('click', refreshSnapshot)
 }
 
-async function loadNews(forceRefresh = false) {
-  setLoading(true)
-
+async function refreshSnapshot() {
+  const button = app.querySelector('[data-refresh]')
+  const status = app.querySelector('[data-snapshot-status]')
+  button.disabled = true
+  status.textContent = '正在检查更新…'
   try {
-    const seed = forceRefresh ? Date.now() : state.feedRefreshSeed
-    const cacheBust = forceRefresh ? Date.now() : ''
-    const [bundle, zaobaoNews] = await Promise.all([
-      fetchNewsBundle({ cacheBust }),
-      fetchZaobaoNews({ cacheBust }).catch(() => ({ lead: null, latest: [] }))
-    ])
-    state.feedRefreshSeed = seed
-    state.sources = bundle.sources
-    state.allNews = applyFollowState(bundle.news)
-    if (buildZaobaoSectionItems(zaobaoNews).length) {
-      state.zaobaoNews = zaobaoNews
+    // 只读取已经生成的首页，不调用上游新闻接口；阅读中的内容始终保留。
+    const response = await fetch('/', { signal: AbortSignal.timeout(10000) })
+    if (!response.ok) throw new Error('静态页面请求失败')
+    const snapshot = parseSnapshotDocument(await response.text())
+    if (!isValidSnapshot(snapshot)) throw new Error('新闻快照不完整')
+    const unchanged = snapshot.generatedAt <= state.generatedAt
+    if (!unchanged) {
+      state.sources = snapshot.sources
+      state.allNews = applyFollowState(snapshot.news)
+      state.zaobaoNews = snapshot.zaobao
+      state.generatedAt = snapshot.generatedAt
+      renderPublishers()
+      if (!app.querySelector('[data-customize]').hidden) renderCustomize()
+      renderFeed()
     }
-    renderPublishers()
-    renderCustomize()
-    renderFeed()
-  } catch (error) {
-    app.querySelector('[data-feed]').innerHTML = `
-      <article class="error-card">
-        <strong>新闻加载失败</strong>
-        <span>${error.message}</span>
-      </article>
-    `
+    status.textContent = `${unchanged ? '已是最新一版 · ' : ''}${formatSnapshotStatus(state.generatedAt)}`
+  } catch {
+    status.textContent = '暂时无法更新，保留当前新闻；点击 ↻ 重试'
+  } finally {
+    button.disabled = false
   }
 }
 
@@ -158,7 +104,11 @@ function renderFeed() {
     return
   }
 
-  feedEl.innerHTML = `${zaobaoSection}${feed.map(renderArticle).join('')}`
+  feedEl.innerHTML = `${zaobaoSection}${feed.map((item, index) => renderStaticArticle(item, index, { production: import.meta.env.PROD })).join('')}`
+  bindFeedEvents(feedEl)
+}
+
+function bindFeedEvents(feedEl) {
   bindImageFallbacks(feedEl)
 
   feedEl.querySelectorAll('[data-hide-publisher]').forEach((button) => {
@@ -177,24 +127,11 @@ function renderZaobaoSection() {
     return ''
   }
 
-  const items = buildZaobaoSectionItems(state.zaobaoNews)
-    .filter((item) => !state.hiddenPublishers.includes(item.publisherName))
-
-  if (!items.length) {
-    return ''
-  }
-
-  return `
-    <section class="feed-section zaobao-section">
-      <div class="feed-section-heading">
-        <h2>联合早报</h2>
-        <span>最新</span>
-      </div>
-      <div class="feed-section-list">
-        ${items.map(renderArticle).join('')}
-      </div>
-    </section>
-  `
+  return renderStaticZaobao(state.zaobaoNews, {
+    production: import.meta.env.PROD,
+    generatedAt: state.generatedAt,
+    hiddenPublishers: state.hiddenPublishers
+  })
 }
 
 function bindCustomizeControls() {
@@ -217,33 +154,9 @@ function bindCustomizeControls() {
   })
 }
 
-function renderArticle(item, index) {
-  const isLead = index === 0
-  const publishedLabel = item.timeLabel || (item.publishedAt ? formatRelativeTime(item.publishedAt) : '')
-  const image = item.imageUrl
-    ? `<img src="${escapeHtml(proxyImageUrl(item.imageUrl))}" data-original-src="${escapeHtml(item.imageUrl)}" alt="" loading="${isLead ? 'eager' : 'lazy'}" referrerpolicy="no-referrer" />`
-    : '<div class="image-fallback"></div>'
-
-  return `
-    <article class="news-card ${isLead ? 'lead-card' : ''}">
-      <a class="image-wrap" href="${item.url}" target="_blank" rel="noreferrer">${image}</a>
-      <div class="card-content">
-        <div class="meta-row">
-          <span>${item.publisherName}</span>
-          <span>${translateChannel(item.category)}</span>
-          ${publishedLabel ? `<span>${publishedLabel}</span>` : ''}
-          ${item.isNew ? '<b>NEW</b>' : ''}
-        </div>
-        <h3><a href="${item.url}" target="_blank" rel="noreferrer">${item.title}</a></h3>
-        <button class="menu-button" data-hide-publisher="${item.publisherName}" type="button" title="隐藏来源">•••</button>
-      </div>
-    </article>
-  `
-}
-
 function bindImageFallbacks(root) {
   root.querySelectorAll('img[data-original-src]').forEach((image) => {
-    image.addEventListener('error', () => {
+    const handleError = () => {
       const wrapper = image.closest('.image-wrap')
       const originalSrc = image.dataset.originalSrc
 
@@ -255,14 +168,11 @@ function bindImageFallbacks(root) {
       }
 
       wrapper?.classList.add('has-error')
-    })
+    }
+    image.addEventListener('error', handleError)
+    // 静态首屏的图片可能在脚本运行前就已失败，补上同一条重试路径。
+    if (image.complete && image.naturalWidth === 0) handleError()
   })
-}
-
-function setLoading(isLoading) {
-  if (isLoading) {
-    app.querySelector('[data-feed]').innerHTML = '<article class="loading-card">正在加载新闻...</article>'
-  }
 }
 
 function bindPresetButtons() {
@@ -780,46 +690,14 @@ const PUBLISHER_TAGS = {
 }
 
 function publisherGroups() {
-  return [
-    {
-      key: 'news',
-      label: '新闻',
-      categories: ['Top News', 'World News', 'US News', 'News', 'Politics']
-    },
-    {
-      key: 'business',
-      label: '商业',
-      categories: ['Business', 'Crypto']
-    },
-    {
-      key: 'technology',
-      label: '科技',
-      categories: ['Technology', 'Tech News', 'Tech Reviews']
-    },
-    {
-      key: 'sports',
-      label: '体育',
-      categories: ['Sports']
-    },
-    {
-      key: 'gaming',
-      label: '游戏',
-      categories: ['Gaming', 'Games']
-    },
-    {
-      key: 'culture',
-      label: '文化',
-      categories: ['Culture', 'Entertainment', 'Fashion', 'Movies']
-    },
-    {
-      key: 'health',
-      label: '健康',
-      categories: ['Health', 'Science']
-    },
-    {
-      key: 'lifestyle',
-      label: '生活',
-      categories: ['Home', 'Food', 'Travel']
-    }
-  ]
+  return PUBLISHER_GROUPS
+}
+
+// 所有发布者标签已初始化后再绑定交互，保留服务端首屏的图片和正文节点。
+state.allNews = applyFollowState(state.allNews)
+renderShell()
+if (state.hiddenPublishers.length) {
+  renderFeed()
+} else {
+  bindFeedEvents(app.querySelector('[data-feed]'))
 }

@@ -4,11 +4,12 @@ const SOURCES_URL = 'https://brave-today-cdn.brave.com/sources.global.json'
 export const CHANNELS = ['Brave', 'Business', 'Gaming', 'Home', 'Science', 'Top News', 'Top Sources']
 
 export async function fetchNewsBundle(options = {}) {
+  const fetchImpl = options.fetchImpl || fetch
   const cacheKey = options.cacheBust ? `?t=${encodeURIComponent(options.cacheBust)}` : ''
   const requestOptions = options.cacheBust ? { cache: 'no-store' } : {}
   const [feedResponse, sourcesResponse] = await Promise.all([
-    fetch(`${FEED_URL}${cacheKey}`, requestOptions),
-    fetch(`${SOURCES_URL}${cacheKey}`, requestOptions)
+    fetchImpl(`${FEED_URL}${cacheKey}`, requestOptions),
+    fetchImpl(`${SOURCES_URL}${cacheKey}`, requestOptions)
   ])
 
   if (!feedResponse.ok) {
